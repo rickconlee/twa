@@ -4,7 +4,7 @@
 
 shopt -s nocasematch
 
-TWA_VERSION="1.9.1"
+TWA_VERSION="1.10.0"
 
 TWA_TIMEOUT="${TWA_TIMEOUT:-5}"
 TWA_USER_AGENT="${TWA_USER_AGENT:-Mozilla/5.0}"
@@ -97,7 +97,7 @@ declare -A TWA_CODES=(
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] || return
 
 # TTY check to prevent breaking scripts
-# Respect the "NO_COLOR spec"
+# Respect the "NO_COLOR" spec: https://no-color.org/
 if [[ -t 1 && -z "${NO_COLOR}" ]]; then
   # Colored output
   TWA_COLOR_GREEN=$(tput setaf 2)
@@ -108,7 +108,7 @@ if [[ -t 1 && -z "${NO_COLOR}" ]]; then
 fi
 
 function usage {
-  echo "Usage: twa [-csvw] <domain>"
+  echo "Usage: twa [-wvcsdV] <domain>"
 }
 
 function installed {
@@ -186,7 +186,7 @@ function output {
   else
     # default is ANSI
     # colorize first arg
-    first="";
+    first=""
     if [ "${1}" == "PASS" ]; then
       first="${TWA_COLOR_GREEN}${1}${TWA_COLOR_RESET}"
     elif [ "${1}" == "MEH" ]; then
@@ -195,9 +195,9 @@ function output {
       first="${TWA_COLOR_RED}${1}${TWA_COLOR_RESET}"
     elif [ "${1}" == "UNK" ] || [ "${1}" == "SKIP" ]; then
       first="${TWA_COLOR_PURPLE}${1}${TWA_COLOR_RESET}"
-    fi;
+    fi
     echo -e "$first(${2}): ${3}"
-  fi;
+  fi
 }
 
 # PASS: A test passed with flying colors (nothing wrong at all).
@@ -606,7 +606,10 @@ function stage_4_repo_and_env_disclosure {
     Rakefile
     .pypirc
     setup.py
+    setup.cfg
     requirements.txt
+    Pipfile
+    Pipfile.lock
     Cargo.lock
     Cargo.toml
   )
@@ -803,13 +806,23 @@ function stage_7_open_development_ports {
     9292 # rack default port
   )
 
+  # Skip the portscan if the '-d' flag is set
+  if [[ -n "${disableportscan}" ]]; then
+    return
+  fi
+
   for dev_port in "${dev_ports[@]}"; do
+    # Start probe in a parallel process because, on closed ports the time out takes some seconds.
     if probe "${domain}" "${dev_port}"; then
       FAIL TWA-0701
     else
       PASS "Domain is not listening on a development/backend port: ${dev_port}"
-    fi
+    fi &
+    # Limit the script to 2 port scans per second by 1/2 second wait.
+    sleep 0.5
   done
+  # Wait until all port scans are completed.
+  wait
 }
 
 # Stage 8: Cookie checks.
@@ -863,7 +876,7 @@ function stage_8_cookie_checks {
       # Must have "Secure" attribute
       # Must come from URI that is considered "secure"
       # Must have "Domain" attribute and it's value must equal the domain being tested
-      has_secure_prefix=$(get_field "__secure" <<< "${cookie}")
+      has_secure_prefix=$(get_field "__secure-" <<< "${cookie}")
 
       # Used in both checks.
       has_domain=$(get_field "domain" <<< "${cookie}")
@@ -893,7 +906,7 @@ function stage_8_cookie_checks {
       # Must come from URI that is "secure"
       # Must NOT contain a "Domain" attribute
       # Must contain a "Path" attribute with a value of "/"
-      has_host_prefix=$(get_field "__host" <<< "${cookie}")
+      has_host_prefix=$(get_field "__host-" <<< "${cookie}")
 
       # Test is skipped if "has_host_prefix" isn't found.
       if [[ -n ${has_host_prefix} ]]; then
@@ -996,12 +1009,13 @@ ensure installed jq
 
 [[ "${BASH_VERSINFO[0]}" -ge 4 ]] || die "Expected GNU Bash 4.0 or later, got ${BASH_VERSION}"
 
-while getopts ":wvcsV" opt; do
+while getopts ":wvcsdV" opt; do
   case "${opt}" in
     w ) www=1 ;;
     v ) verbose=1 ;;
     c ) csv=1 ;;
     s ) testssl=1 ;;
+    d ) disableportscan=1 ;;
     V ) echo "twa version ${TWA_VERSION}"; exit ;;
     \? ) usage; exit ;;
   esac
@@ -1009,7 +1023,9 @@ done
 
 shift $((OPTIND - 1))
 
-domain="${1}"
+# RFC4343: Domain Name System (DNS) Case Insensitivity Clarification
+# In the twa script all case insensitive compares are done by convert to lowercase.
+domain="${1,,}"
 
 [[ -n "${domain}" ]] || { usage; exit 1;  }
 [[ "${domain}" =~ ^https?:// ]] && die "Expected a bare domain, e.g. 'example.com'"

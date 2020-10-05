@@ -3,6 +3,7 @@ twa
 
 [![Build Status](https://img.shields.io/github/workflow/status/trailofbits/twa/CI/master)](https://github.com/trailofbits/twa/actions?query=workflow%3ACI)
 ![Docker Build Status](https://img.shields.io/docker/build/trailofbits/twa.svg)
+[![Repology - Repositories](https://img.shields.io/repology/repositories/twa)](https://repology.org/project/twa/versions)
 
 
 A **t**iny **w**eb **a**uditor with strong opinions.
@@ -51,6 +52,9 @@ $ twa -w example.com
 # Audit a site and include testssl
 # Requires either `testssl` or `testssl.sh` on your $PATH
 $ twa -s example.com
+
+# Audit a site without scanning common development ports
+$ twa -d example.com
 ```
 
 `twa` takes one domain at a time, and only audits more than one domain at once in the `-w` case.
